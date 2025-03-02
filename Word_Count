@@ -1,0 +1,51 @@
+from pyspark import SparkContext, SparkConf
+from pyspark.sql.functions import *
+import wikipedia
+def get_wiki_content(title, word_limit=10000):
+    try:
+        # To get Wikipedia page content
+        content = wikipedia.page(title).content
+        # Split content into words
+        words = content.split()
+        # Trim content to the specified word limit
+        trimmed_content = " ".join(words[:word_limit])
+        
+        return trimmed_content
+    
+    except wikipedia.exceptions.PageError:
+        print(f"Error: The page '{title}' does not exist.")
+    except wikipedia.exceptions.DisambiguationError as e:
+        print(f"Error: The title '{title}' is ambiguous. Suggested pages: {e.options[:5]}")
+        
+    return None
+
+def save_to_file(content, filename="wiki_text.txt"):
+    try:
+        with open(filename, "w", encoding="utf-8") as file:
+            file.write(content)
+            print(f"File saved: {filename}")
+    except Exception as e:
+        print(f"Error saving file: {e}")
+
+if __name__=="__main__":
+  title = "Machinelearning"  
+  content = get_wiki_content(title)
+
+  if content:
+    save_to_file(content)
+    config=SparkConf().setAppName("Word_Count").setMaster("local")
+    sc = SparkContext.getOrCreate(config)
+    #Create RDD from file
+    wiki = sc.textFile("wiki_text.txt")
+    #Splits the lines into words
+    words=wiki.flatMap(lambda x: x.split(" "))
+    #Filtering the empty words and converting to lowercase
+    words_lower=words.filter(lambda y: y.strip() !="").map(lambda y:y.lower())
+    #Map words to (word,1) as tuple
+    word_1count=words_lower.map(lambda x:(x,1))
+    #Reduce by key to count occurances
+    words_count=word_1count.reduceByKey(lambda x,y:x+y)
+    #Sorting the values based on frequency of value
+    words_count_sort=words_count.sortBy(lambda x:x[1])
+    for x,y in words_count_sort.collect():
+          print(f"{x} : {y}")
